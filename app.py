@@ -497,6 +497,37 @@ st.caption(
     + ("Split by **FY** to match your FY filter." if fy_filter_active
        else "Split by **calendar year**.")
 )
+
+with st.expander("❓ How New vs Returning works (worked example — read this if the numbers seem odd)"):
+    st.markdown(
+        """
+There are **three different things** that sound similar. For any selected year:
+
+| Concept | Means | Counted as |
+|---|---|---|
+| 🟦 **New** | Never subscribed before this year — **first time ever** | a person |
+| 🟧 **Returning** | Subscribed in an **earlier year**, came back this year | a person |
+| 🔁 **Renewal (same year)** | Subscribed **2+ times inside the same year** | an extra *enrollment* |
+
+The status is judged **per year** — the *same person* can be New one year and Returning the next.
+
+**Example — "Bala" subscribes in FY2025-26, then again in FY2026-27:**
+
+| Year viewed | Bala counts as | Why |
+|---|---|---|
+| FY**2025-26** | 🟦 **New** | never subscribed before → first time |
+| FY**2026-27** | 🟧 **Returning** | had already subscribed (in 2025-26) |
+
+So a New person **cannot** have subscribed earlier — the moment they had, they'd be Returning.
+Their *future* registrations don't change this year's label. And if Bala subscribed **twice within
+2025-26**, that second one is a 🔁 **renewal** — it shows up in the *enrollments* count (People ≠
+transactions), not as a second person.
+
+*The one label that never changes* is **lifetime loyalty** (1-Time vs Repeater, in the expander
+below) — that's fixed per person across all history, independent of the year you pick.
+        """
+    )
+
 first_period = df_all.groupby("global_contact_id")[first_period_col].first()
 rows = []
 for p in sorted(df[period_col].dropna().unique()):
