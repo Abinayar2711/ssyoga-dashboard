@@ -650,3 +650,17 @@ with st.expander("📄  Underlying data (filtered)"):
         use_container_width=True,
     )
     st.caption("Showing first 1,000 filtered rows.")
+
+# ---- Developer footnote (tiny, for devs — not meant to draw attention) ------
+st.markdown(
+    "<div style='font-size:0.62rem; line-height:1.35; color:#9AA0AE; margin-top:2.5rem; "
+    "opacity:0.75;'>"
+    "Data source: Google Sheet (raw registration rows) · Logic: computed live in "
+    "<code>app.py</code> (github: Abinayar2711/ssyoga-dashboard) on each load — nothing is "
+    "written back to the Sheet or hand-edited. New/Returning is derived per person from "
+    "their earliest-ever registration date; lifetime Repeat pax from their total "
+    "registration count. Deduped on <code>global_participant_id</code>; 4 Challenge-Class "
+    "categories only."
+    "</div>",
+    unsafe_allow_html=True,
+)
