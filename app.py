@@ -34,7 +34,7 @@ DATA_SOURCE = "csv"  # "csv" (now) or "gsheet" (once your daily job writes there
 CSV_PATH = "../Sri Sri Yoga — Enrollment Report - Sheet1.csv"
 
 # For DATA_SOURCE == "gsheet":
-GSHEET_URL = ""      # full Google Sheet URL, or spreadsheet key
+GSHEET_URL = "https://docs.google.com/spreadsheets/d/1Cr5PoHXtud8aYNYpi-hugGuRLu_RvjB9BS7gX5wgjZY/edit"
 GSHEET_WORKSHEET = "Sheet1"
 
 CACHE_TTL_SECONDS = 3600  # re-read the source at most once an hour per viewer
