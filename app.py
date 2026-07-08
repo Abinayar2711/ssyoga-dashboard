@@ -523,7 +523,12 @@ with box_people:
                   help="Never subscribed before this view — very first time.")
         p2.metric("🟧 Returning", fmt(returning_n),
                   help="Had already subscribed earlier and came back.")
-        st.caption("New + Returning = every person, counted **once**.")
+        if returning_n == 0 and not fy_filter_active and default_dates:
+            st.caption("↳ **Returning is 0** because the view covers the **whole timeline** "
+                       "(nothing comes before the start). **Pick one FY/year** on the left to "
+                       "see returning subscribers — or use the by-year table below.")
+        else:
+            st.caption("New + Returning = every person, counted **once**.")
 with box_enroll:
     with st.container(border=True):
         st.markdown(f"#### 🧾 Enrollments — {total_enroll:,}")
@@ -570,10 +575,6 @@ with st.expander(f"🔁 Renewal detail — how many times people signed up ({ren
         fig.update_layout(margin=dict(t=10, b=10), height=280,
                           yaxis_title="People", xaxis_title="Times signed up in this view")
         st.plotly_chart(fig, use_container_width=True)
-if not any_filter and returning_n == 0:
-    st.caption("ℹ️ With no time filter, everyone counts as *New* (the view starts from the "
-               "very beginning of the data). **Pick a year or FY** on the left to see how many "
-               "were Returning — or read the by-year split below.")
 
 # --- New vs Returning by period (FY when an FY filter is on, else cal. year) --
 # Match the breakdown unit to the filter unit, so an FY filter isn't sliced into
