@@ -250,39 +250,63 @@ st.caption(
 # ---- Sidebar filters --------------------------------------------------------
 st.sidebar.header("Filters")
 
+fy_opts = sorted(df_all["registration_date_FY"].dropna().unique().tolist())
+min_d = df_all["registration_date"].min().date()
+max_d = df_all["registration_date"].max().date()
+
+# Reset button — clears every filter back to default (also rescues the date
+# picker if it gets stuck mid-selection, which Streamlit shows as a red box).
+_FILTER_KEYS = ("flt_cat", "flt_fy", "flt_dates", "flt_aud")
+
+
+def _reset_filters():
+    for _k in _FILTER_KEYS:
+        st.session_state.pop(_k, None)
+
+
+st.sidebar.button("↺  Reset all filters", on_click=_reset_filters,
+                  use_container_width=True)
+
 cats = st.sidebar.multiselect(
     "Category",
     options=CATEGORY_ORDER,
     default=CATEGORY_ORDER,
     format_func=lambda c: CATEGORY_SHORT[c],
+    key="flt_cat",
 )
 
-fy_opts = sorted(df_all["registration_date_FY"].dropna().unique().tolist())
-fys = st.sidebar.multiselect("Financial Year", options=fy_opts, default=fy_opts)
+fys = st.sidebar.multiselect("Financial Year", options=fy_opts, default=fy_opts,
+                             key="flt_fy")
 
-min_d = df_all["registration_date"].min().date()
-max_d = df_all["registration_date"].max().date()
 date_range = st.sidebar.date_input(
     "Registration date range",
     value=(min_d, max_d),
     min_value=min_d,
     max_value=max_d,
+    key="flt_dates",
 )
+st.sidebar.caption("Pick a start **and** end date. Stuck on red? Hit **Reset all filters**.")
 
 audience = st.sidebar.radio(
     "Audience",
     options=["All", "Pure subscribers only", "Teachers / VTP-TTP grads only"],
     index=0,
     help="Teacher/VTP status comes from the enrichment columns in the base table.",
+    key="flt_aud",
 )
+
+# Normalize the date range once — a mid-selection returns a 1-tuple, which we
+# treat as the full span (no filtering) so nothing downstream crashes on [1].
+if isinstance(date_range, (tuple, list)) and len(date_range) == 2:
+    date_lo, date_hi = date_range
+else:
+    date_lo, date_hi = min_d, max_d
 
 # ---- Apply filters ----------------------------------------------------------
 df = df_all[df_all["event_name_en_gb"].isin(cats)]
 if fys:
     df = df[df["registration_date_FY"].isin(fys)]
-if isinstance(date_range, tuple) and len(date_range) == 2:
-    lo, hi = date_range
-    df = df[(df["registration_date"].dt.date >= lo) & (df["registration_date"].dt.date <= hi)]
+df = df[(df["registration_date"].dt.date >= date_lo) & (df["registration_date"].dt.date <= date_hi)]
 
 if audience != "All" and "Is_Teacher_or_VTP_Grad" in df.columns:
     if audience == "Teachers / VTP-TTP grads only":
@@ -299,10 +323,7 @@ if df.empty:
 # ---- Filter-scope awareness (so labels never lie) --------------------------
 default_cats = set(cats) == set(CATEGORY_ORDER)
 fy_filter_active = bool(fys) and set(fys) != set(fy_opts)
-default_dates = (
-    isinstance(date_range, tuple) and len(date_range) == 2
-    and date_range[0] == min_d and date_range[1] == max_d
-)
+default_dates = (date_lo == min_d and date_hi == max_d)
 default_audience = audience == "All"
 any_filter = not (default_cats and not fy_filter_active and default_dates and default_audience)
 
@@ -312,7 +333,7 @@ if not default_cats:
 if fy_filter_active:
     scope_bits.append("FY: " + ", ".join(fys))
 if not default_dates:
-    scope_bits.append(f"dates: {date_range[0]} → {date_range[1]}")
+    scope_bits.append(f"dates: {date_lo} → {date_hi}")
 if not default_audience:
     scope_bits.append(f"audience: {audience}")
 
