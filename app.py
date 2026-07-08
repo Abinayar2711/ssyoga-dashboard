@@ -442,52 +442,59 @@ fig.update_layout(height=300, margin=dict(t=10, b=10), yaxis_title="Enrollments"
 st.plotly_chart(fig, use_container_width=True)
 
 # ============================================================================
-# 3 · SUBSCRIBERS  (Total · New/Repeat per period · 1-Time vs Repeater)
+# 3 · SUBSCRIBERS  (people — New vs Returning, with the people->enrollments bridge)
 # ============================================================================
 st.divider()
 st.header("3 · Subscribers")
-st.caption("Counted per **unique contact** (people), not per registration.")
+st.caption("Counted per **unique person**, not per registration. A *subscriber* = "
+           "anyone who subscribed — **New and Returning both count**.")
 
-s1, s2 = st.columns(2)
-s1.metric(f"Unique Subscribers ({scope_suffix})", fmt(unique_contacts))
+# --- Headline: how many people subscribed, split New vs Returning ------------
+# New       = their FIRST-EVER subscription falls within this view.
+# Returning = they subscribed BEFORE this view's start and came back.
+scope_word = "all-time" if not any_filter else "in this view"
+contacts_scope = df["global_contact_id"].unique()
+first_reg_scope = (
+    df_all.groupby("global_contact_id")["contact_first_reg"].first().reindex(contacts_scope)
+)
+scope_start = df["registration_date"].min()
+returning_n = int((first_reg_scope < scope_start).sum())
+new_n = len(contacts_scope) - returning_n
+renew_extra = total_enroll - unique_contacts
 
-# --- 1-Time vs Repeater (lifetime) ---
-band = contact_repeat_band(df)
-one_time = int(band["1 - One Time"])
-repeater = int(band.drop("1 - One Time").sum())
-s2.metric("Repeaters (2+ lifetime)", fmt(repeater), help=f"{one_time:,} are one-time; {repeater:,} have re-subscribed at least once.")
+st.markdown(f"### {unique_contacts:,} people subscribed &nbsp;·&nbsp; _{scope_word}_")
+h1, h2 = st.columns(2)
+h1.metric("🟦 New (first time ever)", fmt(new_n),
+          help="Their first-ever subscription falls within this view.")
+h2.metric("🟧 Returning (came back)", fmt(returning_n),
+          help="They subscribed before this view's start and came back.")
+st.caption(
+    f"→ These **{unique_contacts:,} people** placed **{total_enroll:,} enrollments** — "
+    f"the extra **{renew_extra:,}** come from people who **renewed more than once**"
+    + (" within this view" if any_filter else " over time")
+    + ". (People ≠ transactions — that's why these two numbers differ.)"
+)
+if not any_filter and returning_n == 0:
+    st.caption("ℹ️ With no time filter, everyone counts as *New* (the view starts from the "
+               "very beginning of the data). **Pick a year or FY** on the left to see how many "
+               "were Returning — or read the by-year split below.")
 
-st.subheader("1-Time vs Repeater (lifetime)")
-lt1, lt2 = st.columns([1, 2])
-with lt1:
-    numbers_table(pd.DataFrame({
-        "Type": ["1-Time", "Repeater (2+)"],
-        "Subscribers": [fmt(one_time), fmt(repeater)],
-    }))
-with lt2:
-    fig = go.Figure(go.Bar(
-        x=["1-Time", "Repeater (2+)"], y=[one_time, repeater],
-        marker_color=[PRIMARY, ACCENT], text=[fmt(one_time), fmt(repeater)], textposition="outside",
-    ))
-    fig.update_layout(margin=dict(t=10, b=10), height=300, yaxis_title="Subscribers")
-    st.plotly_chart(fig, use_container_width=True)
-
-# --- New vs Repeat by period (FY when an FY filter is on, else calendar year) ---
-# Fix: match the breakdown unit to the filter unit, so an FY filter doesn't get
-# sliced into confusing calendar-year rows that straddle the FY boundary.
+# --- New vs Returning by period (FY when an FY filter is on, else cal. year) --
+# Match the breakdown unit to the filter unit, so an FY filter isn't sliced into
+# calendar-year rows that straddle the FY boundary.
 if fy_filter_active:
     period_col, first_period_col, period_label = "registration_date_FY", "contact_first_fy", "FY"
 else:
     period_col, first_period_col, period_label = "reg_year", "contact_first_year", "Year"
 
-st.subheader(f"New vs Repeat Subscribers by {period_label}")
+st.subheader(f"New vs Returning Subscribers by {period_label}")
 st.caption(
-    f"New = contact's *first-ever* registration falls in that {period_label.lower()}. "
-    f"Repeat = active that {period_label.lower()} but first registered earlier. "
-    + ("Breakdown is by **FY** to match your FY filter." if fy_filter_active
-       else "Breakdown is by **calendar year**.")
+    f"**New** = person's *first-ever* subscription is in that {period_label.lower()}. "
+    f"**Returning** = subscribed in an *earlier* {period_label.lower()} and came back "
+    f"(NOT the same as renewing twice within the {period_label.lower()}). "
+    + ("Split by **FY** to match your FY filter." if fy_filter_active
+       else "Split by **calendar year**.")
 )
-# per-contact first period, from the full base (lifetime), as a lookup
 first_period = df_all.groupby("global_contact_id")[first_period_col].first()
 rows = []
 for p in sorted(df[period_col].dropna().unique()):
@@ -496,32 +503,52 @@ for p in sorted(df[period_col].dropna().unique()):
     new_ct = int((fp == p).sum())
     total_ct = len(contacts_in_p)
     rows.append({"Period": str(int(p)) if period_label == "Year" else str(p),
-                 "New": new_ct, "Repeat": total_ct - new_ct, "Total active": total_ct})
+                 "New": new_ct, "Returning": total_ct - new_ct, "Total people": total_ct})
 nr = pd.DataFrame(rows)
 n1, n2 = st.columns([1, 2])
 with n1:
     numbers_table(pd.DataFrame({
         period_label: nr["Period"],
         "New": [fmt(v) for v in nr["New"]],
-        "Repeat": [fmt(v) for v in nr["Repeat"]],
-        "Total": [fmt(v) for v in nr["Total active"]],
+        "Returning": [fmt(v) for v in nr["Returning"]],
+        "Total": [fmt(v) for v in nr["Total people"]],
     }))
 with n2:
     fig = go.Figure()
     fig.add_bar(x=nr["Period"], y=nr["New"], name="New", marker_color=PRIMARY)
-    fig.add_bar(x=nr["Period"], y=nr["Repeat"], name="Repeat", marker_color=ACCENT)
+    fig.add_bar(x=nr["Period"], y=nr["Returning"], name="Returning", marker_color=ACCENT)
     fig.update_layout(barmode="stack", height=320, margin=dict(t=10, b=10),
                       legend=dict(orientation="h", yanchor="bottom", y=1.02, x=0),
-                      yaxis_title="Contacts")
+                      yaxis_title="People")
     st.plotly_chart(fig, use_container_width=True)
 
-# --- Repeat bands (detail) ---
-with st.expander("Detail: subscribers by repeat band (per contact)"):
+# --- Lifetime loyalty (separate question — demoted so it doesn't compete) ----
+band = contact_repeat_band(df)
+one_time = int(band["1 - One Time"])
+repeater = int(band.drop("1 - One Time").sum())
+with st.expander("🔁 Lifetime loyalty — 1-Time vs Repeater (across ALL history, ignores the selected period)"):
+    st.caption("A *different* question from New/Returning above: over a person's **entire history**, "
+               "did they subscribe once (**1-Time**) or more than once (**Repeater**)? "
+               "This label is fixed per person and does not depend on the year selected.")
+    lt1, lt2 = st.columns([1, 2])
+    with lt1:
+        numbers_table(pd.DataFrame({
+            "Type": ["1-Time", "Repeater (2+)"],
+            "People": [fmt(one_time), fmt(repeater)],
+        }))
+    with lt2:
+        fig = go.Figure(go.Bar(
+            x=["1-Time", "Repeater (2+)"], y=[one_time, repeater],
+            marker_color=[PRIMARY, ACCENT], text=[fmt(one_time), fmt(repeater)], textposition="outside",
+        ))
+        fig.update_layout(margin=dict(t=10, b=10), height=280, yaxis_title="People")
+        st.plotly_chart(fig, use_container_width=True)
+    st.markdown("**How many times they subscribed (repeat bands):**")
     fig = go.Figure(go.Bar(
         x=band.index, y=band.values,
         marker_color=ACCENT, text=[fmt(v) for v in band.values], textposition="outside",
     ))
-    fig.update_layout(margin=dict(t=10, b=10), height=300, yaxis_title="Contacts")
+    fig.update_layout(margin=dict(t=10, b=10), height=280, yaxis_title="People")
     st.plotly_chart(fig, use_container_width=True)
 
 # ============================================================================
