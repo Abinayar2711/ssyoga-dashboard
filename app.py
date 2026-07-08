@@ -289,103 +289,156 @@ if df.empty:
     st.warning("No rows match the current filters.")
     st.stop()
 
-# ---- KPI tiles --------------------------------------------------------------
+# ---- Shared computations ----------------------------------------------------
 total_enroll = len(df)
 unique_contacts = df["global_contact_id"].nunique()
 resub = resubscribe_rate(df)
 act = active_subscriptions_by_month(df)
 current_active = int(act.iloc[-1]) if len(act) else 0
 
+
+def numbers_table(df_str):
+    """Render a compact, comma-formatted numbers table (index hidden)."""
+    st.dataframe(df_str, use_container_width=True, hide_index=True)
+
+
+# ---- KPI tiles (at-a-glance) -----------------------------------------------
 k1, k2, k3, k4 = st.columns(4)
 k1.metric("Total Enrollments", fmt(total_enroll), help="Each registration = 1 enrollment (repeats included).")
 k2.metric("Unique Subscribers", fmt(unique_contacts), help="Distinct global_contact_id.")
-k3.metric("Resubscribe Rate", f"{resub*100:.1f}%", help="Contacts with 2+ registrations ÷ total contacts (per-contact).")
-k4.metric("Active Subscriptions (now)", fmt(current_active), help="Registrations whose cohort window overlaps the current month.")
+k3.metric("Active Subscriptions (now)", fmt(current_active), help="Registrations whose cohort window overlaps the current month.")
+k4.metric("Resubscribe Rate", f"{resub*100:.1f}%", help="Contacts with 2+ registrations ÷ total contacts (per-contact).")
 
 with st.expander("ℹ️  Metric definitions (so the numbers are traceable)"):
     st.markdown(
         """
 - **Total Enrollments** — one row per registration; repeat sign-ups counted. Unit = registrations.
 - **Unique Subscribers** — distinct `global_contact_id`. Unit = people.
-- **Resubscribe Rate** — *per contact*: (contacts with 2+ registrations) ÷ (total contacts). Not per-registration.
 - **New Subscriber (period)** — contact whose *earliest-ever* registration falls in that period.
 - **Repeat Subscriber (period)** — active in the period but first registered *before* it.
 - **1-Time vs Repeater** — *lifetime* label: 1 registration ever vs 2+ ever (fixed per contact, not period-dependent).
 - **Active Subscriptions** — cohort window `[course_event_start_date, +duration]` overlaps the month.
   *Not* "MAU": there is no login/attendance signal in this data — only registration events.
+- **Resubscribe Rate** — *per contact*: (contacts with 2+ registrations) ÷ (total contacts). Not per-registration.
         """
     )
 
+# ============================================================================
+# 1 · CATEGORIES
+# ============================================================================
 st.divider()
-
-# ---- Row 1: category bar + repeat band -------------------------------------
-c1, c2 = st.columns(2)
-
-with c1:
-    st.subheader("Enrollments by Category")
-    cat_counts = (
-        df["category_short"]
-        .value_counts()
-        .reindex([CATEGORY_SHORT[c] for c in CATEGORY_ORDER if CATEGORY_SHORT[c] in df["category_short"].values])
-    )
+st.header("1 · Categories")
+cat_counts = (
+    df["category_short"]
+    .value_counts()
+    .reindex([CATEGORY_SHORT[c] for c in CATEGORY_ORDER if CATEGORY_SHORT[c] in df["category_short"].values])
+)
+cc1, cc2 = st.columns([1, 2])
+with cc1:
+    numbers_table(pd.DataFrame({
+        "Category": cat_counts.index,
+        "Enrollments": [fmt(v) for v in cat_counts.values],
+    }))
+with cc2:
     fig = go.Figure(go.Bar(
         x=cat_counts.index, y=cat_counts.values,
-        marker_color=PRIMARY, text=[fmt(v) for v in cat_counts.values],
-        textposition="outside",
+        marker_color=PRIMARY, text=[fmt(v) for v in cat_counts.values], textposition="outside",
     ))
-    fig.update_layout(margin=dict(t=10, b=10), height=340, yaxis_title="Enrollments")
+    fig.update_layout(margin=dict(t=10, b=10), height=320, yaxis_title="Enrollments")
     st.plotly_chart(fig, use_container_width=True)
 
-with c2:
-    st.subheader("Subscribers by Repeat Band")
-    st.caption("Counted **per contact** (not per row).")
-    band = contact_repeat_band(df)
+# ============================================================================
+# 2 · ENROLLMENTS  (Calendar Year · Financial Year · Monthly)
+# ============================================================================
+st.divider()
+st.header("2 · Enrollments")
+st.caption("Each registration = 1 enrollment (repeat sign-ups included).")
+
+# --- Calendar Year ---
+st.subheader("By Calendar Year")
+cy_counts = df.groupby("reg_year").size().sort_index()
+cy_counts.index = cy_counts.index.astype(int)
+e1, e2 = st.columns([1, 2])
+with e1:
+    numbers_table(pd.DataFrame({
+        "Calendar Year": cy_counts.index.astype(str),
+        "Enrollments": [fmt(v) for v in cy_counts.values],
+    }))
+with e2:
     fig = go.Figure(go.Bar(
-        x=band.index, y=band.values,
-        marker_color=ACCENT, text=[fmt(v) for v in band.values],
-        textposition="outside",
+        x=cy_counts.index.astype(str), y=cy_counts.values,
+        marker_color=PRIMARY, text=[fmt(v) for v in cy_counts.values], textposition="outside",
     ))
-    fig.update_layout(margin=dict(t=10, b=10), height=340, yaxis_title="Contacts")
+    fig.update_layout(margin=dict(t=10, b=10), height=300, yaxis_title="Enrollments")
     st.plotly_chart(fig, use_container_width=True)
 
-# ---- Row 2: FY period + cumulative -----------------------------------------
-st.subheader("Enrollments by Financial Year")
+# --- Financial Year (period + cumulative) ---
+st.subheader("By Financial Year")
 fy_counts = df.groupby("registration_date_FY").size().sort_index()
 fy_cum = fy_counts.cumsum()
+f1, f2 = st.columns([1, 2])
+with f1:
+    numbers_table(pd.DataFrame({
+        "FY": fy_counts.index,
+        "Enrollments": [fmt(v) for v in fy_counts.values],
+        "Cumulative": [fmt(v) for v in fy_cum.values],
+    }))
+with f2:
+    fig = go.Figure()
+    fig.add_bar(x=fy_counts.index, y=fy_counts.values, name="Per FY",
+                marker_color=PRIMARY, text=[fmt(v) for v in fy_counts.values], textposition="outside")
+    fig.add_scatter(x=fy_cum.index, y=fy_cum.values, name="Cumulative",
+                    mode="lines+markers", line=dict(color=ACCENT, width=3), yaxis="y2")
+    fig.update_layout(
+        height=320, margin=dict(t=10, b=10),
+        yaxis=dict(title="Per FY"),
+        yaxis2=dict(title="Cumulative", overlaying="y", side="right", showgrid=False),
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, x=0),
+    )
+    st.plotly_chart(fig, use_container_width=True)
 
-fig = go.Figure()
-fig.add_bar(x=fy_counts.index, y=fy_counts.values, name="Per FY",
-            marker_color=PRIMARY, text=[fmt(v) for v in fy_counts.values], textposition="outside")
-fig.add_scatter(x=fy_cum.index, y=fy_cum.values, name="Cumulative",
-                mode="lines+markers", line=dict(color=ACCENT, width=3), yaxis="y2")
-fig.update_layout(
-    height=360, margin=dict(t=10, b=10),
-    yaxis=dict(title="Enrollments per FY"),
-    yaxis2=dict(title="Cumulative", overlaying="y", side="right", showgrid=False),
-    legend=dict(orientation="h", yanchor="bottom", y=1.02, x=0),
-)
-st.plotly_chart(fig, use_container_width=True)
-
-# ---- Row 3: monthly trend + active subscriptions ---------------------------
-st.subheader("Monthly Enrollment Trend")
+# --- Monthly ---
+st.subheader("Monthly Trend")
 monthly = df.groupby("reg_month").size()
 fig = go.Figure(go.Scatter(
     x=monthly.index, y=monthly.values, mode="lines", fill="tozeroy",
     line=dict(color=PRIMARY, width=2),
 ))
-fig.update_layout(height=320, margin=dict(t=10, b=10), yaxis_title="Enrollments")
+fig.update_layout(height=300, margin=dict(t=10, b=10), yaxis_title="Enrollments")
 st.plotly_chart(fig, use_container_width=True)
 
-st.subheader("Active Subscriptions Over Time")
-st.caption("Cohort windows overlapping each month, clipped at the current month (no future projection).")
-fig = go.Figure(go.Scatter(
-    x=act.index, y=act.values, mode="lines", fill="tozeroy",
-    line=dict(color="#27AE60", width=2),
-))
-fig.update_layout(height=320, margin=dict(t=10, b=10), yaxis_title="Active subscriptions")
-st.plotly_chart(fig, use_container_width=True)
+# ============================================================================
+# 3 · SUBSCRIBERS  (Total · New/Repeat per period · 1-Time vs Repeater)
+# ============================================================================
+st.divider()
+st.header("3 · Subscribers")
+st.caption("Counted per **unique contact** (people), not per registration.")
 
-# ---- New vs Repeat subscribers by year -------------------------------------
+s1, s2 = st.columns(2)
+s1.metric("Unique Subscribers (all-time)", fmt(unique_contacts))
+
+# --- 1-Time vs Repeater (lifetime) ---
+band = contact_repeat_band(df)
+one_time = int(band["1 - One Time"])
+repeater = int(band.drop("1 - One Time").sum())
+s2.metric("Repeaters (2+ lifetime)", fmt(repeater), help=f"{one_time:,} are one-time; {repeater:,} have re-subscribed at least once.")
+
+st.subheader("1-Time vs Repeater (lifetime)")
+lt1, lt2 = st.columns([1, 2])
+with lt1:
+    numbers_table(pd.DataFrame({
+        "Type": ["1-Time", "Repeater (2+)"],
+        "Subscribers": [fmt(one_time), fmt(repeater)],
+    }))
+with lt2:
+    fig = go.Figure(go.Bar(
+        x=["1-Time", "Repeater (2+)"], y=[one_time, repeater],
+        marker_color=[PRIMARY, ACCENT], text=[fmt(one_time), fmt(repeater)], textposition="outside",
+    ))
+    fig.update_layout(margin=dict(t=10, b=10), height=300, yaxis_title="Subscribers")
+    st.plotly_chart(fig, use_container_width=True)
+
+# --- New vs Repeat by year ---
 st.subheader("New vs Repeat Subscribers by Year")
 st.caption("New = first-ever registration in that year. Repeat = active that year, first registered earlier.")
 rows = []
@@ -394,21 +447,60 @@ for yr in sorted(df["reg_year"].dropna().unique()):
     in_yr = df[df["reg_year"] == yr]
     contacts_in_yr = in_yr["global_contact_id"].unique()
     # new = contact's lifetime-first reg is in this year (computed on full base, not filtered)
-    firsts = df_all.set_index("global_contact_id")["contact_first_reg"]
     sub = df_all[df_all["global_contact_id"].isin(contacts_in_yr)]
     new_ct = sub[sub["contact_first_reg"].dt.year == yr]["global_contact_id"].nunique()
     total_ct = len(contacts_in_yr)
     rows.append({"Year": yr, "New": new_ct, "Repeat": total_ct - new_ct, "Total active": total_ct})
 nr = pd.DataFrame(rows)
+n1, n2 = st.columns([1, 2])
+with n1:
+    numbers_table(pd.DataFrame({
+        "Year": nr["Year"].astype(str),
+        "New": [fmt(v) for v in nr["New"]],
+        "Repeat": [fmt(v) for v in nr["Repeat"]],
+        "Total": [fmt(v) for v in nr["Total active"]],
+    }))
+with n2:
+    fig = go.Figure()
+    fig.add_bar(x=nr["Year"].astype(str), y=nr["New"], name="New", marker_color=PRIMARY)
+    fig.add_bar(x=nr["Year"].astype(str), y=nr["Repeat"], name="Repeat", marker_color=ACCENT)
+    fig.update_layout(barmode="stack", height=320, margin=dict(t=10, b=10),
+                      legend=dict(orientation="h", yanchor="bottom", y=1.02, x=0),
+                      yaxis_title="Contacts")
+    st.plotly_chart(fig, use_container_width=True)
 
-fig = go.Figure()
-fig.add_bar(x=nr["Year"], y=nr["New"], name="New", marker_color=PRIMARY)
-fig.add_bar(x=nr["Year"], y=nr["Repeat"], name="Repeat", marker_color=ACCENT)
-fig.update_layout(barmode="stack", height=340, margin=dict(t=10, b=10),
-                  legend=dict(orientation="h", yanchor="bottom", y=1.02, x=0),
-                  yaxis_title="Contacts")
+# --- Repeat bands (detail) ---
+with st.expander("Detail: subscribers by repeat band (per contact)"):
+    fig = go.Figure(go.Bar(
+        x=band.index, y=band.values,
+        marker_color=ACCENT, text=[fmt(v) for v in band.values], textposition="outside",
+    ))
+    fig.update_layout(margin=dict(t=10, b=10), height=300, yaxis_title="Contacts")
+    st.plotly_chart(fig, use_container_width=True)
+
+# ============================================================================
+# 4 · ACTIVE SUBSCRIPTIONS  (Active MAU)
+# ============================================================================
+st.divider()
+st.header("4 · Active Subscriptions")
+st.caption(
+    "Cohort windows `[course_event_start_date, +duration]` overlapping each month, "
+    "clipped at the current month (no future projection). Renamed from *MAU* — the "
+    "data has no login/attendance signal, only registrations."
+)
+peak_val = int(act.max()) if len(act) else 0
+peak_month = act.idxmax().strftime("%b %Y") if len(act) else "—"
+a1, a2 = st.columns(2)
+a1.metric("Active now", fmt(current_active))
+a2.metric("Peak", fmt(peak_val), help=f"Peak was {peak_month}.")
+fig = go.Figure(go.Scatter(
+    x=act.index, y=act.values, mode="lines", fill="tozeroy",
+    line=dict(color="#27AE60", width=2),
+))
+fig.update_layout(height=320, margin=dict(t=10, b=10), yaxis_title="Active subscriptions")
 st.plotly_chart(fig, use_container_width=True)
 
+# ---- Underlying data --------------------------------------------------------
 st.divider()
 with st.expander("📄  Underlying data (filtered)"):
     st.dataframe(
