@@ -348,7 +348,19 @@ else:
 total_enroll = len(df)
 unique_contacts = df["global_contact_id"].nunique()
 resub = resubscribe_rate(df)
-act = active_subscriptions_by_month(df)
+
+# Active Subscriptions uses the WHOLE pool — Category + Audience filters apply,
+# but NOT the registration-date/FY filter. "Active in month M" is about the
+# coverage window, not when the person registered, so a plan bought in an
+# earlier FY that is still active must still be counted. The FY/date selection
+# instead zooms the trend and drives the peak / period-end numbers (below).
+df_active = df_all[df_all["event_name_en_gb"].isin(cats)].copy()
+if audience != "All" and "Is_Teacher_or_VTP_Grad" in df_active.columns:
+    if audience == "Teachers / VTP-TTP grads only":
+        df_active = df_active[df_active["Is_Teacher_or_VTP_Grad"] == "Yes"]
+    else:
+        df_active = df_active[df_active["Is_Teacher_or_VTP_Grad"] != "Yes"]
+act = active_subscriptions_by_month(df_active)
 current_active = int(act.iloc[-1]) if len(act) else 0
 
 
@@ -711,18 +723,55 @@ not built from the per-year New/Returning split.
 # ============================================================================
 st.divider()
 st.header("4 · Active Subscriptions")
+
+# Determine the view window. A time filter (FY or date range) ZOOMS the trend
+# and drives the peak / period-end numbers; it does NOT shrink the pool.
+cur_month = act.index.max() if len(act) else None
+if not default_dates:
+    win_start = pd.Timestamp(date_lo).to_period("M").to_timestamp()
+    win_end = pd.Timestamp(date_hi).to_period("M").to_timestamp()
+    time_filter_active = True
+elif fy_filter_active:
+    starts = [pd.Timestamp(year=int(fy.split("-")[0]), month=4, day=1) for fy in fys]
+    ends = [pd.Timestamp(year=int(fy.split("-")[0]) + 1, month=3, day=1) for fy in fys]
+    win_start, win_end = min(starts), max(ends)
+    time_filter_active = True
+else:
+    win_start = act.index.min() if len(act) else None
+    win_end = cur_month
+    time_filter_active = False
+
+# clamp to available months (never project past the current month)
+if len(act):
+    win_start = max(win_start, act.index.min())
+    win_end = min(win_end, cur_month)
+    act_view = act[(act.index >= win_start) & (act.index <= win_end)]
+else:
+    act_view = act
+
 st.caption(
-    "Cohort windows `[course_event_start_date, +duration]` overlapping each month, "
-    "clipped at the current month (no future projection). Renamed from *MAU* — the "
-    "data has no login/attendance signal, only registrations."
+    "Count of subscriptions whose coverage window **[cohort start → start + plan length]** "
+    "overlaps a month — a **monthly** figure. Uses the **whole pool** (registration-date / FY "
+    "filter does *not* apply here; it only **zooms** the view). Cohort-based start (not the "
+    "person's own sign-up date), clipped at the current month. Renamed from *MAU* — the data "
+    "has **no login/attendance signal**, only registrations."
 )
-peak_val = int(act.max()) if len(act) else 0
-peak_month = act.idxmax().strftime("%b %Y") if len(act) else "—"
+
 a1, a2 = st.columns(2)
-a1.metric("Active now", fmt(current_active))
-a2.metric("Peak", fmt(peak_val), help=f"Peak was {peak_month}.")
+if time_filter_active and len(act_view):
+    pk_val = int(act_view.max()); pk_month = act_view.idxmax().strftime("%b %Y")
+    end_m = act_view.index.max(); end_val = int(act_view.loc[end_m]); end_lbl = end_m.strftime("%b %Y")
+    a1.metric("Peak in period", fmt(pk_val), help=f"Highest active month in the selected period ({pk_month}).")
+    a2.metric(f"Active at {end_lbl}", fmt(end_val),
+              help="Active subscriptions at the end of the selected period (or current month, whichever is earlier).")
+else:
+    peak_val = int(act.max()) if len(act) else 0
+    peak_month = act.idxmax().strftime("%b %Y") if len(act) else "—"
+    a1.metric("Active now", fmt(current_active), help=f"Current month ({cur_month.strftime('%b %Y') if cur_month is not None else '—'}).")
+    a2.metric("All-time peak", fmt(peak_val), help=f"Highest active month ever ({peak_month}).")
+
 fig = go.Figure(go.Scatter(
-    x=act.index, y=act.values, mode="lines", fill="tozeroy",
+    x=act_view.index, y=act_view.values, mode="lines", fill="tozeroy",
     line=dict(color="#27AE60", width=2),
 ))
 fig.update_layout(height=320, margin=dict(t=10, b=10), yaxis_title="Active subscriptions")

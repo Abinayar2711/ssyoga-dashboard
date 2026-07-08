@@ -98,11 +98,22 @@ So **Repeater ≠ "will be Returning"** — 2,606 repeaters never appear as Retu
 - **Unique Subscribers** — distinct `global_contact_id`. Unit = people.
 - **Resubscribe Rate** — *per person*: (people with 2+ registrations) ÷ (total people).
   **Not** per-registration.
-- **Active Subscriptions** *(renamed from "MAU")* — a registration is "active" in month *M*
-  if its cohort window `[course_event_start_date, +duration]` overlaps *M*, clipped at the
-  current month (no future projection). Renamed from MAU because the data has **no
-  login/attendance signal** — only registration events. `course_event_start_date` is a
-  shared **cohort/batch** start (only ~33 distinct values), not a per-person start date.
+- **Active Subscriptions** *(renamed from "MAU")* — a subscription is "active" in month *M*
+  if its coverage window `[course_event_start_date, +duration]` overlaps *M*. It is a
+  **monthly** figure, clipped at the current month (no future projection).
+  - **Whole pool:** Category + Audience filters apply, but the **registration-date / FY
+    filter does NOT** — "active in *M*" is about the coverage window, not when the person
+    registered, so a plan bought in an earlier FY that is still active must still count.
+    The FY/date selection only **zooms** the trend and drives the numbers below.
+  - **When a period is selected:** show **Peak in period** and **Active at period-end**.
+    With no time filter: **Active now** (current month) and **all-time peak**.
+    *(FY2025-26: peak 18,374 in Jan 2026, 12,518 at Mar 2026; whole-history peak 24,359 in
+    Dec 2024; active now ~16,611.)*
+  - **Counts subscriptions, not people** — someone with 2 overlapping plans counts as 2.
+    (Current month: 16,611 subscriptions vs 15,895 unique people.)
+  - Renamed from MAU because the data has **no login/attendance signal** — only registration
+    events. `course_event_start_date` is a shared **cohort/batch** start (only ~33 distinct
+    values), not a per-person start date.
 
 ---
 
