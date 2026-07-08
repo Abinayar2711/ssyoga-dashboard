@@ -555,14 +555,24 @@ with n2:
                       yaxis_title="People")
     st.plotly_chart(fig, use_container_width=True)
 
-# --- Lifetime loyalty (separate question — demoted so it doesn't compete) ----
-band = contact_repeat_band(df)
+# --- Lifetime loyalty (separate question — computed on the FULL dataset) -----
+# This is a fixed, per-person, all-history label, so it is deliberately computed
+# on df_all (ignores every filter) to match its "lifetime" meaning.
+band = contact_repeat_band(df_all)
 one_time = int(band["1 - One Time"])
 repeater = int(band.drop("1 - One Time").sum())
-with st.expander("🔁 Lifetime loyalty — 1-Time vs Repeater (across ALL history, ignores the selected period)"):
+# split repeaters: came back across 2+ FYs (=> Returning) vs 2+ within one FY (renewal only)
+_cnt = df_all.groupby("global_contact_id")["global_participant_id"].count()
+_fys = df_all.groupby("global_contact_id")["registration_date_FY"].nunique()
+_rep_ids = _cnt[_cnt >= 2].index
+rep_across = int((_fys.loc[_rep_ids] >= 2).sum())
+rep_within = int((_fys.loc[_rep_ids] == 1).sum())
+
+with st.expander("🔁 Lifetime loyalty — 1-Time vs Repeater (whole dataset, ignores ALL filters)"):
     st.caption("A *different* question from New/Returning above: over a person's **entire history**, "
                "did they subscribe once (**1-Time**) or more than once (**Repeater**)? "
-               "This label is fixed per person and does not depend on the year selected.")
+               "This label is fixed per person and does not depend on the year selected — so these "
+               "numbers stay the same whatever filters are on.")
     lt1, lt2 = st.columns([1, 2])
     with lt1:
         numbers_table(pd.DataFrame({
@@ -583,6 +593,28 @@ with st.expander("🔁 Lifetime loyalty — 1-Time vs Repeater (across ALL histo
     ))
     fig.update_layout(margin=dict(t=10, b=10), height=280, yaxis_title="People")
     st.plotly_chart(fig, use_container_width=True)
+
+    st.divider()
+    st.markdown("**Repeat pax vs New/Returning — why they're NOT the same calculation**")
+    st.markdown(
+        f"""
+**Repeat pax counts *total* subscriptions per person, ever** — it is **not** derived from the
+year-by-year New/Returning logic. A person becomes a **Repeater** ({repeater:,}) by *either* path:
+
+| Path to becoming a Repeater | People | Shows up as |
+|---|---|---|
+| Came back in a **later FY** | {rep_across:,} | 🟧 Returning (in that later FY) |
+| Subscribed 2+ times **within a single FY** only | {rep_within:,} | 🔁 Renewal (never Returning) |
+| **Total Repeaters** | **{repeater:,}** | |
+
+So **Repeater ≠ "will be Returning"** — **{rep_within:,}** repeaters *never* appear as Returning;
+they simply renewed inside one FY. That's why Repeat pax is counted directly (total registrations),
+not built from the per-year New/Returning split.
+
+- **New / Returning** = *when* they subscribed, relative to a year (changes per year).
+- **Repeat pax** = *how many times* total, ever (fixed per person).
+        """
+    )
 
 # ============================================================================
 # 4 · ACTIVE SUBSCRIPTIONS  (Active MAU)
