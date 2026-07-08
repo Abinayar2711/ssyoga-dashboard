@@ -508,6 +508,35 @@ st.caption(
     + ". People ≠ transactions — that's why the two totals differ. "
     "🔁 Renewal cuts across **both** New and Returning (it's not part of the People split)."
 )
+
+# Click-to-open renewal drill-down: how many times renewers signed up (spots bursts)
+with st.expander(f"🔁 Renewal detail — how many times people signed up ({renewers_n:,} renewers)"):
+    st.caption(
+        "Only people who signed up **2+ times** in this view. "
+        "“2” = signed up twice (renewed once) … “6+” = six or more. "
+        "A tall bar on the right flags an unusual burst that period."
+    )
+    _ren = _scope_cnt[_scope_cnt >= 2]
+
+    def _renew_band(n):
+        return "2" if n == 2 else "3" if n == 3 else "4" if n == 4 else "5" if n == 5 else "6+"
+
+    _dist = _ren.map(_renew_band).value_counts().reindex(["2", "3", "4", "5", "6+"], fill_value=0)
+    rd1, rd2 = st.columns([1, 2])
+    with rd1:
+        numbers_table(pd.DataFrame({
+            "Sign-ups": _dist.index,
+            "People": [fmt(v) for v in _dist.values],
+        }))
+        st.caption(f"Most by one person: **{int(_scope_cnt.max()):,}** sign-ups.")
+    with rd2:
+        fig = go.Figure(go.Bar(
+            x=_dist.index, y=_dist.values, marker_color=ACCENT,
+            text=[fmt(v) for v in _dist.values], textposition="outside",
+        ))
+        fig.update_layout(margin=dict(t=10, b=10), height=280,
+                          yaxis_title="People", xaxis_title="Times signed up in this view")
+        st.plotly_chart(fig, use_container_width=True)
 if not any_filter and returning_n == 0:
     st.caption("ℹ️ With no time filter, everyone counts as *New* (the view starts from the "
                "very beginning of the data). **Pick a year or FY** on the left to see how many "
