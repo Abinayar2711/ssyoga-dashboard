@@ -29,7 +29,13 @@ import streamlit as st
 # ----------------------------------------------------------------------------
 # CONFIG  — the only things you touch when moving from CSV -> Google Sheet
 # ----------------------------------------------------------------------------
-DATA_SOURCE = "csv"  # "csv" (now) or "gsheet" (once your daily job writes there)
+# "csv" locally (default), "gsheet" in the cloud. Set via secrets so the SAME
+# commit works both places — locally there's no secrets file so it falls to csv;
+# on Streamlit Cloud add  data_source = "gsheet"  to Secrets.
+try:
+    DATA_SOURCE = st.secrets.get("data_source", "csv")
+except Exception:
+    DATA_SOURCE = "csv"
 
 CSV_PATH = "../Sri Sri Yoga — Enrollment Report - Sheet1.csv"
 
