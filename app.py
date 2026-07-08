@@ -499,11 +499,7 @@ with box_enroll:
                   help="One enrollment per person (their first in this view).")
         e2.metric("🔁 Renewals (extra)", fmt(renew_extra),
                   help="Extra sign-ups by people who registered more than once.")
-        st.caption(
-            f"Same people — just counting their **sign-ups**. Those **{renew_extra:,}** extra "
-            f"sign-ups came from **{renewers_n:,} people** who renewed"
-            + (" (a few renewed more than twice)." if renew_extra > renewers_n else ".")
-        )
+        st.caption(f"🔁 by **{renewers_n:,} people** who renewed.")
 
 st.caption(
     f"↔️ **Same {unique_contacts:,} people**, two rulers. The Enrollments box counts their "
