@@ -464,10 +464,10 @@ renew_extra = total_enroll - unique_contacts
 
 st.markdown(f"### {unique_contacts:,} people subscribed &nbsp;·&nbsp; _{scope_word}_")
 h1, h2 = st.columns(2)
-h1.metric("🟦 New (first time ever)", fmt(new_n),
-          help="Their first-ever subscription falls within this view.")
-h2.metric("🟧 Returning (came back)", fmt(returning_n),
-          help="They subscribed before this view's start and came back.")
+h1.metric("🟦 New (brand-new, never before)", fmt(new_n),
+          help="Had NEVER subscribed before this view — this is their very first time.")
+h2.metric("🟧 Returning (subscribed before too)", fmt(returning_n),
+          help="Had already subscribed earlier, before this view's start, and came back.")
 st.caption(
     f"→ These **{unique_contacts:,} people** placed **{total_enroll:,} enrollments** — "
     f"the extra **{renew_extra:,}** come from people who **renewed more than once**"
@@ -488,10 +488,12 @@ else:
     period_col, first_period_col, period_label = "reg_year", "contact_first_year", "Year"
 
 st.subheader(f"New vs Returning Subscribers by {period_label}")
+p = period_label.lower()
 st.caption(
-    f"**New** = person's *first-ever* subscription is in that {period_label.lower()}. "
-    f"**Returning** = subscribed in an *earlier* {period_label.lower()} and came back "
-    f"(NOT the same as renewing twice within the {period_label.lower()}). "
+    f"**New** = had **never subscribed in any earlier {p}** — this {p} is their very first time. "
+    f"(If they'd subscribed in a previous {p}, they'd be counted as Returning, not New.) "
+    f"**Returning** = **already subscribed in an earlier {p}** and came back this {p} "
+    f"— which is *different* from renewing more than once inside the same {p}. "
     + ("Split by **FY** to match your FY filter." if fy_filter_active
        else "Split by **calendar year**.")
 )
