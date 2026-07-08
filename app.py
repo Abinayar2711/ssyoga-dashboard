@@ -518,6 +518,12 @@ There are **three different things** that sound similar. For any selected year:
 | 🟧 **Returning** | Subscribed in an **earlier year**, came back this year | a person |
 | 🔁 **Renewal (same year)** | Subscribed **2+ times inside the same year** | an extra *enrollment* |
 
+**Renewal is a *separate axis* — it cuts across BOTH New and Returning.** It's not tied to
+being New: a renewal = anyone with 2+ registrations *inside* the same year, whether they're
+New or Returning that year. New/Returning splits the **people**; renewal lives in the **gap**
+between people and enrollments *(e.g. FY2025-26: 29,845 people but 33,492 enrollments — 2,743
+of those people renewed within the year, 2,599 New + 144 Returning)*.
+
 The status is judged **per year** — the *same person* can be New one year and Returning the next.
 
 **Example — "Bala" subscribes in FY2025-26, then again in FY2026-27:**

@@ -33,13 +33,33 @@ history, and the FY it falls in. This single value drives New / Returning / Rene
 | viewed FY **≠** first-ever FY (first-ever was earlier) | 🟧 **Returning** (came back) | person |
 | **2+ registrations within the same viewed FY** | 🔁 **Renewal** | enrollment (transaction) |
 
+**Exact test applied for a selected FY**
+| Label | Test | Unit |
+|---|---|---|
+| 🟦 **New** | has a registration in the FY **AND** first-ever FY **==** selected | person |
+| 🟧 **Returning** | has a registration in the FY **AND** first-ever FY **<** selected | person |
+| 🔁 **Renewal** | has **2+ registrations *inside* the selected FY** (New *or* Returning) | enrollment |
+
+- **Returning counts only people actually active in the selected FY** — not everyone whose
+  first-ever FY is earlier, but those who *show up again* in the selected FY.
+
 **Key consequences**
 - New / Returning is **per-FY and relative** — the *same person* is **New** in the FY they
   first join and **Returning** in any later FY they come back. Their future registrations
   never change a past FY's label (first-ever date is fixed).
+- **Renewal is a separate axis — it cuts across BOTH New and Returning.** It is **not** tied
+  to being New. A renewal = anyone with 2+ registrations inside the FY, whether they are New
+  or Returning. *(FY2025-26: 2,743 people renewed — 2,599 of them New, 144 Returning.)*
 - **Renewal does not change New/Returning.** A New person who registers twice in that FY is
   still **1 New person**, just **2 enrollments**. Renewals surface only in the
-  *people → enrollments bridge* ("+ renewed more than once"), never as an extra person.
+  *people → enrollments bridge*, never as an extra person.
+- **Two ways renewal is measured (don't confuse them):**
+  - *People who renewed* = people with 2+ registrations in the FY (FY25-26: **2,743**).
+  - *Extra enrollments from renewal* = total registrations − unique people
+    (FY25-26: 33,492 − 29,845 = **3,647**). This is the number in the bridge line — larger
+    than the people count because some renew more than twice.
+- New / Returning splits the **people** (29,845); renewal lives in the **gap** between people
+  (29,845) and enrollments (33,492).
 - A **New** person cannot have subscribed earlier — the moment they had, they'd be Returning.
 - **Anchor check:** every person is New exactly once → New counts across all FYs sum to the
   total unique subscribers (47,409).
