@@ -1,0 +1,16 @@
+# ---- NEVER commit data (contains personal data: contacts, DOB, gender, phone) ----
+*.csv
+*.xlsx
+*.xls
+*.parquet
+data/
+# ---- secrets ----
+.streamlit/secrets.toml
+*.json
+service_account*.json
+# ---- python ----
+__pycache__/
+*.pyc
+.venv/
+venv/
+.env
