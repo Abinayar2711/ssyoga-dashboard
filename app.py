@@ -448,12 +448,13 @@ st.divider()
 st.header("3 · Subscribers")
 st.caption("Counted per **unique person**, not per registration. A *subscriber* = "
            "anyone who subscribed — **New and Returning both count**.")
+_anchor = "FY" if fy_filter_active else "calendar year"
 st.markdown(
     "<div style='font-size:0.8rem; color:#5B6472; background:rgba(91,141,239,0.08); "
     "border-left:3px solid #5B8DEF; padding:6px 10px; border-radius:4px; margin:2px 0 8px;'>"
-    "<b>Rule of thumb</b> — everything below is anchored on a person's <b>first-ever FY</b>: "
-    "viewed FY = first-ever → 🟦 <b>New</b> · earlier first-ever → 🟧 <b>Returning</b> · "
-    "2+ entries in the same FY → 🔁 <b>Renewal</b> (an extra enrollment, same person)."
+    f"<b>Rule of thumb</b> — everything below is anchored on a person's <b>first-ever {_anchor}</b>: "
+    f"viewed {_anchor} = first-ever → 🟦 <b>New</b> · earlier first-ever → 🟧 <b>Returning</b> · "
+    f"2+ entries in the same {_anchor} → 🔁 <b>Renewal</b> (an extra enrollment, same person)."
     "</div>",
     unsafe_allow_html=True,
 )
