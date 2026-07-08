@@ -1,0 +1,5 @@
+# App theme — recolors Streamlit's default red (#FF4B4B) accents (multiselect
+# chips, selected radio, links, spinners) to the dashboard's blue, so the UI
+# reads as one calm system instead of "all red" (especially on mobile).
+[theme]
+primaryColor = "#5B8DEF"
