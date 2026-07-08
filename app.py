@@ -111,6 +111,13 @@ def load_data() -> pd.DataFrame:
     df["contact_first_reg"] = first_reg
     df["is_new_this_reg"] = df["registration_date"].eq(first_reg)
 
+    # contact's lifetime-first FINANCIAL YEAR (Indian FY, Apr-Mar), so the
+    # New/Repeat breakdown can be done by FY as well as calendar year.
+    fm = first_reg.dt.month
+    fy_start = first_reg.dt.year.where(fm >= 4, first_reg.dt.year - 1)
+    df["contact_first_fy"] = fy_start.astype("Int64").astype(str) + "-" + (fy_start + 1).astype("Int64").astype(str).str[-2:]
+    df["contact_first_year"] = first_reg.dt.year
+
     # contact-level lifetime registration count -> lifetime band (1-Time / Repeater)
     life_count = df.groupby("global_contact_id")["global_participant_id"].transform("count")
     df["contact_lifetime_regs"] = life_count
@@ -289,6 +296,33 @@ if df.empty:
     st.warning("No rows match the current filters.")
     st.stop()
 
+# ---- Filter-scope awareness (so labels never lie) --------------------------
+default_cats = set(cats) == set(CATEGORY_ORDER)
+fy_filter_active = bool(fys) and set(fys) != set(fy_opts)
+default_dates = (
+    isinstance(date_range, tuple) and len(date_range) == 2
+    and date_range[0] == min_d and date_range[1] == max_d
+)
+default_audience = audience == "All"
+any_filter = not (default_cats and not fy_filter_active and default_dates and default_audience)
+
+scope_bits = []
+if not default_cats:
+    scope_bits.append("categories: " + ", ".join(CATEGORY_SHORT[c] for c in cats))
+if fy_filter_active:
+    scope_bits.append("FY: " + ", ".join(fys))
+if not default_dates:
+    scope_bits.append(f"dates: {date_range[0]} → {date_range[1]}")
+if not default_audience:
+    scope_bits.append(f"audience: {audience}")
+
+scope_suffix = "all-time" if not any_filter else "within filter"
+if any_filter:
+    st.info("🔎 **Filtered view** — " + "; ".join(scope_bits) +
+            ". All numbers below reflect only this subset. Clear the sidebar filters for the full dataset.")
+else:
+    st.success("Showing the **full dataset** — no filters applied.")
+
 # ---- Shared computations ----------------------------------------------------
 total_enroll = len(df)
 unique_contacts = df["global_contact_id"].nunique()
@@ -415,7 +449,7 @@ st.header("3 · Subscribers")
 st.caption("Counted per **unique contact** (people), not per registration.")
 
 s1, s2 = st.columns(2)
-s1.metric("Unique Subscribers (all-time)", fmt(unique_contacts))
+s1.metric(f"Unique Subscribers ({scope_suffix})", fmt(unique_contacts))
 
 # --- 1-Time vs Repeater (lifetime) ---
 band = contact_repeat_band(df)
@@ -438,32 +472,44 @@ with lt2:
     fig.update_layout(margin=dict(t=10, b=10), height=300, yaxis_title="Subscribers")
     st.plotly_chart(fig, use_container_width=True)
 
-# --- New vs Repeat by year ---
-st.subheader("New vs Repeat Subscribers by Year")
-st.caption("New = first-ever registration in that year. Repeat = active that year, first registered earlier.")
+# --- New vs Repeat by period (FY when an FY filter is on, else calendar year) ---
+# Fix: match the breakdown unit to the filter unit, so an FY filter doesn't get
+# sliced into confusing calendar-year rows that straddle the FY boundary.
+if fy_filter_active:
+    period_col, first_period_col, period_label = "registration_date_FY", "contact_first_fy", "FY"
+else:
+    period_col, first_period_col, period_label = "reg_year", "contact_first_year", "Year"
+
+st.subheader(f"New vs Repeat Subscribers by {period_label}")
+st.caption(
+    f"New = contact's *first-ever* registration falls in that {period_label.lower()}. "
+    f"Repeat = active that {period_label.lower()} but first registered earlier. "
+    + ("Breakdown is by **FY** to match your FY filter." if fy_filter_active
+       else "Breakdown is by **calendar year**.")
+)
+# per-contact first period, from the full base (lifetime), as a lookup
+first_period = df_all.groupby("global_contact_id")[first_period_col].first()
 rows = []
-for yr in sorted(df["reg_year"].dropna().unique()):
-    yr = int(yr)
-    in_yr = df[df["reg_year"] == yr]
-    contacts_in_yr = in_yr["global_contact_id"].unique()
-    # new = contact's lifetime-first reg is in this year (computed on full base, not filtered)
-    sub = df_all[df_all["global_contact_id"].isin(contacts_in_yr)]
-    new_ct = sub[sub["contact_first_reg"].dt.year == yr]["global_contact_id"].nunique()
-    total_ct = len(contacts_in_yr)
-    rows.append({"Year": yr, "New": new_ct, "Repeat": total_ct - new_ct, "Total active": total_ct})
+for p in sorted(df[period_col].dropna().unique()):
+    contacts_in_p = df[df[period_col] == p]["global_contact_id"].unique()
+    fp = first_period.reindex(contacts_in_p)
+    new_ct = int((fp == p).sum())
+    total_ct = len(contacts_in_p)
+    rows.append({"Period": str(int(p)) if period_label == "Year" else str(p),
+                 "New": new_ct, "Repeat": total_ct - new_ct, "Total active": total_ct})
 nr = pd.DataFrame(rows)
 n1, n2 = st.columns([1, 2])
 with n1:
     numbers_table(pd.DataFrame({
-        "Year": nr["Year"].astype(str),
+        period_label: nr["Period"],
         "New": [fmt(v) for v in nr["New"]],
         "Repeat": [fmt(v) for v in nr["Repeat"]],
         "Total": [fmt(v) for v in nr["Total active"]],
     }))
 with n2:
     fig = go.Figure()
-    fig.add_bar(x=nr["Year"].astype(str), y=nr["New"], name="New", marker_color=PRIMARY)
-    fig.add_bar(x=nr["Year"].astype(str), y=nr["Repeat"], name="Repeat", marker_color=ACCENT)
+    fig.add_bar(x=nr["Period"], y=nr["New"], name="New", marker_color=PRIMARY)
+    fig.add_bar(x=nr["Period"], y=nr["Repeat"], name="Repeat", marker_color=ACCENT)
     fig.update_layout(barmode="stack", height=320, margin=dict(t=10, b=10),
                       legend=dict(orientation="h", yanchor="bottom", y=1.02, x=0),
                       yaxis_title="Contacts")
