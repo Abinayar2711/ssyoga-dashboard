@@ -472,16 +472,36 @@ new_n = len(contacts_scope) - returning_n
 renew_extra = total_enroll - unique_contacts
 
 st.markdown(f"### {unique_contacts:,} people subscribed &nbsp;·&nbsp; _{scope_word}_")
-h1, h2 = st.columns(2)
-h1.metric("🟦 New (brand-new, never before)", fmt(new_n),
-          help="Had NEVER subscribed before this view — this is their very first time.")
-h2.metric("🟧 Returning (subscribed before too)", fmt(returning_n),
-          help="Had already subscribed earlier, before this view's start, and came back.")
+
+# Two honest rulers side by side: PEOPLE (New/Returning) vs ENROLLMENTS (incl.
+# renewals). Different totals make it obvious they measure different things, so
+# nobody sums renewal into the New/Returning people-split.
+box_people, box_enroll = st.columns(2)
+with box_people:
+    with st.container(border=True):
+        st.markdown(f"#### 👥 People — {unique_contacts:,}")
+        p1, p2 = st.columns(2)
+        p1.metric("🟦 New", fmt(new_n),
+                  help="Never subscribed before this view — very first time.")
+        p2.metric("🟧 Returning", fmt(returning_n),
+                  help="Had already subscribed earlier and came back.")
+        st.caption("New + Returning = every person, counted **once**.")
+with box_enroll:
+    with st.container(border=True):
+        st.markdown(f"#### 🧾 Enrollments — {total_enroll:,}")
+        e1, e2 = st.columns(2)
+        e1.metric("First sign-up", fmt(unique_contacts),
+                  help="One enrollment per person (their first in this view).")
+        e2.metric("🔁 Renewals (extra)", fmt(renew_extra),
+                  help="Extra sign-ups by people who registered more than once.")
+        st.caption("Same people — just counting their **sign-ups**.")
+
 st.caption(
-    f"→ These **{unique_contacts:,} people** placed **{total_enroll:,} enrollments** — "
-    f"the extra **{renew_extra:,}** come from people who **renewed more than once**"
+    f"↔️ **Same {unique_contacts:,} people**, two rulers. The Enrollments box counts their "
+    f"sign-ups, and **{renew_extra:,}** of those are renewals"
     + (" within this view" if any_filter else " over time")
-    + ". (People ≠ transactions — that's why these two numbers differ.)"
+    + ". People ≠ transactions — that's why the two totals differ. "
+    "🔁 Renewal cuts across **both** New and Returning (it's not part of the People split)."
 )
 if not any_filter and returning_n == 0:
     st.caption("ℹ️ With no time filter, everyone counts as *New* (the view starts from the "
