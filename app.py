@@ -471,6 +471,10 @@ scope_start = df["registration_date"].min()
 returning_n = int((first_reg_scope < scope_start).sum())
 new_n = len(contacts_scope) - returning_n
 renew_extra = total_enroll - unique_contacts
+# how many *people* renewed (2+ registrations within this view) — distinct from
+# renew_extra, which is the count of extra enrollments those people generated.
+_scope_cnt = df.groupby("global_contact_id")["global_participant_id"].count()
+renewers_n = int((_scope_cnt >= 2).sum())
 
 st.markdown(f"### {unique_contacts:,} people subscribed &nbsp;·&nbsp; _{scope_word}_")
 
@@ -495,7 +499,11 @@ with box_enroll:
                   help="One enrollment per person (their first in this view).")
         e2.metric("🔁 Renewals (extra)", fmt(renew_extra),
                   help="Extra sign-ups by people who registered more than once.")
-        st.caption("Same people — just counting their **sign-ups**.")
+        st.caption(
+            f"Same people — just counting their **sign-ups**. Those **{renew_extra:,}** extra "
+            f"sign-ups came from **{renewers_n:,} people** who renewed"
+            + (" (a few renewed more than twice)." if renew_extra > renewers_n else ".")
+        )
 
 st.caption(
     f"↔️ **Same {unique_contacts:,} people**, two rulers. The Enrollments box counts their "
