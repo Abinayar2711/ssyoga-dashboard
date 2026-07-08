@@ -750,12 +750,28 @@ else:
     act_view = act
 
 st.caption(
-    "Count of subscriptions whose coverage window **[cohort start → start + plan length]** "
-    "overlaps a month — a **monthly** figure. Uses the **whole pool** (registration-date / FY "
-    "filter does *not* apply here; it only **zooms** the view). Cohort-based start (not the "
-    "person's own sign-up date), clipped at the current month. Renamed from *MAU* — the data "
-    "has **no login/attendance signal**, only registrations."
+    "**How many subscriptions' coverage windows (cohort start → start + plan length) cover a "
+    "given month** — a **monthly** count. Pick a year to zoom in on it."
 )
+with st.expander("ℹ️ How Active Subscriptions is calculated"):
+    st.markdown(
+        """
+- **Coverage window** — each subscription is "active" from its **cohort start date** to
+  **start + plan length** (1 / 3 / 6 / 12 months by category). It's active in any month that
+  window touches. So the figure is always **per-month**, never a single yearly number.
+- **Whole pool** — Category + Audience filters apply, but the **registration-date / FY filter
+  does *not*** shrink it; it only **zooms** the trend. "Active in month *M*" is about the
+  window, not when the person registered — a plan bought in an earlier FY that's still active
+  must still count.
+- **What the two numbers mean:**
+  - *No year selected* → **Active now** (current month) + **all-time peak** (highest month ever).
+  - *A year selected* → zoom to it → **Peak in period** (highest month in it) + **Active at
+    period-end** (its last month).
+- **Counts subscriptions, not people** — someone with 2 overlapping plans counts as 2.
+- **Cohort-based start**, clipped at the current month (no future projection). Renamed from
+  *MAU* — the data has **no login/attendance signal**, only registrations.
+        """
+    )
 
 a1, a2 = st.columns(2)
 if time_filter_active and len(act_view):
