@@ -119,10 +119,17 @@ def _read_gsheet() -> pd.DataFrame:
     """
     import gspread  # noqa: local import so CSV mode has no gspread dependency
 
-    gc = gspread.service_account_from_dict(st.secrets["gcp_service_account"])
+    gc = gspread.service_account_from_dict(dict(st.secrets["gcp_service_account"]))
     sh = gc.open_by_url(GSHEET_URL) if GSHEET_URL.startswith("http") else gc.open_by_key(GSHEET_URL)
     ws = sh.worksheet(GSHEET_WORKSHEET)
-    return pd.DataFrame(ws.get_all_records())
+    # get_all_values (raw lists) is far faster than get_all_records on a 56k-row
+    # sheet — one batch call, header row -> columns, everything else stays string
+    # (fine: date parsing and id counts all work on strings).
+    values = ws.get_all_values()
+    if not values:
+        return pd.DataFrame()
+    header, *rows = values
+    return pd.DataFrame(rows, columns=header)
 
 
 # ----------------------------------------------------------------------------
