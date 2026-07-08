@@ -207,7 +207,32 @@ def fmt(n) -> str:
 # ----------------------------------------------------------------------------
 # UI
 # ----------------------------------------------------------------------------
-df_all = load_data()
+try:
+    df_all = load_data()
+except FileNotFoundError:
+    st.error(
+        "**No data source configured.**\n\n"
+        f"The app is running in **{DATA_SOURCE.upper()}** mode but couldn't find the data.\n\n"
+        "On Streamlit Cloud there is no local CSV (by design — the CSV holds personal "
+        "data and is never uploaded). To connect the Google Sheet, open **Manage app → "
+        "Settings → Secrets** and add:\n\n"
+        "```toml\n"
+        "data_source = \"gsheet\"\n\n"
+        "[gcp_service_account]\n"
+        "# ...full contents of your service-account JSON...\n"
+        "```\n\n"
+        "Then share the Sheet with the service account's `client_email` (Viewer)."
+    )
+    st.stop()
+except Exception as e:  # gspread auth / permission / worksheet errors
+    st.error(
+        "**Could not read the Google Sheet.**\n\n"
+        f"`{type(e).__name__}: {e}`\n\n"
+        "Common causes: the Sheet isn't shared with the service account's "
+        "`client_email` (share it as Viewer), the `gcp_service_account` secret is "
+        "malformed, or the Sheets/Drive API isn't enabled on the Cloud project."
+    )
+    st.stop()
 
 st.title("🧘 Sri Sri Yoga — Challenge Classes Enrollment Dashboard")
 st.caption(
