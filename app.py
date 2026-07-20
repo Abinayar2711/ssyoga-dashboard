@@ -495,7 +495,11 @@ def numbers_table(df_str):
 # ---- KPI tiles (at-a-glance) -----------------------------------------------
 k1, k2, k3, k4 = st.columns(4)
 k1.metric("Total Enrollments", fmt(total_enroll), help="Each registration = 1 enrollment (repeats included).")
-k2.metric("Unique Subscribers", fmt(unique_contacts), help="Distinct global_contact_id.")
+k2.metric("Unique Subscribers", fmt(unique_contacts),
+          help="People who REGISTERED in the selected period — counted once each, however many "
+               "times they signed up. Not the same as 'People served' in section 4, which is "
+               "people whose plan was RUNNING in the period (they may have registered earlier).")
+k2.caption("people who **registered** in this period")
 k3.metric("Active Subscriptions (now)", fmt(current_active), help="Registrations whose cohort window overlaps the current month.")
 k3.caption(f"held by {fmt(current_active_people)} people")
 k4.metric("Resubscribe Rate", f"{resub*100:.1f}%", help="Contacts with 2+ registrations ÷ total contacts (per-contact).")
@@ -934,9 +938,15 @@ if time_filter_active and len(act_view):
     # once, so it can be quoted for a period without the sum-the-months error.
     served = people_served_between(df_active, act_view.index.min(), end_m + pd.offsets.MonthEnd(0))
     a3.metric("People served in period", fmt(served),
-              help="Distinct people whose plan was running at any point in the selected period. "
-                   "Counted once each, however many months they were covered for.")
-    a3.caption("Each person counted **once** — this is the number to quote for a year.")
+              help="People whose plan was RUNNING at any point in the selected period — counted "
+                   "once each, however many months they were covered for. Not the same as "
+                   "'Unique Subscribers' above, which is people who REGISTERED in the period; "
+                   "someone who bought a 1-Year plan last year is served this year but did not "
+                   "register this year.")
+    a3.caption(
+        "people whose **plan was running** in this period — each counted **once**. "
+        "This is the number to quote for a year."
+    )
 else:
     peak_val = int(act.max()) if len(act) else 0
     peak_month = act.idxmax().strftime("%b %Y") if len(act) else "—"
@@ -949,8 +959,12 @@ else:
     if len(act):
         served = people_served_between(df_active, act.index.min(), act.index.max() + pd.offsets.MonthEnd(0))
         a3.metric("People served (all time)", fmt(served),
-                  help="Distinct people who have ever held a running plan. Counted once each.")
-        a3.caption("Each person counted **once** — pick a year to see it for that year.")
+                  help="People who have ever held a running plan — counted once each. Not the "
+                       "same as 'Unique Subscribers' above, which counts people who registered.")
+        a3.caption(
+            "people whose **plan was running** at some point — each counted **once**. "
+            "Pick a year to see it for that year."
+        )
 
 fig = go.Figure(go.Scatter(
     x=act_view.index, y=act_view.values, mode="lines", fill="tozeroy",
