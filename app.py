@@ -237,6 +237,38 @@ def resubscribe_rate(df: pd.DataFrame) -> float:
     return (counts >= 2).sum() / total
 
 
+def _with_coverage_window(df: pd.DataFrame) -> pd.DataFrame:
+    """Attach each registration's coverage window [cover_start, cover_end).
+
+    Both ends are normalised to midnight. Cohort starts carry a time component
+    (usually 06:00), so an un-normalised end never lands exactly on a month
+    boundary -- a 1-Month plan starting 1 Jul 06:00 ends 1 Aug 06:00, which a
+    naive `end >= start_of_month` test scores as active in August too. Dropping
+    the time and treating cover_end as EXCLUSIVE makes a 1-Month plan occupy one
+    month, not two, while a mid-month plan (16% of rows) still correctly spans
+    the two months it genuinely runs across.
+    """
+    d = df.dropna(subset=["course_event_start_date"]).copy()
+    if d.empty:
+        return d
+    d["months"] = d["event_name_en_gb"].map(CATEGORY_MONTHS)
+    d["cover_start"] = d["course_event_start_date"].dt.normalize()
+    d["cover_end"] = [
+        s + pd.DateOffset(months=int(m))
+        for s, m in zip(d["cover_start"], d["months"])
+    ]
+    return d
+
+
+def _active_mask(d: pd.DataFrame, m_start: pd.Timestamp, m_end: pd.Timestamp):
+    """Rows whose coverage window overlaps the month [m_start, m_end].
+
+    cover_end is exclusive, hence the strict `>` -- a plan ending on the 1st is
+    not active in that month.
+    """
+    return (d["cover_start"] <= m_end) & (d["cover_end"] > m_start)
+
+
 def active_subscriptions_by_month(df: pd.DataFrame) -> pd.Series:
     """Active subscriptions per calendar month.
 
@@ -245,24 +277,18 @@ def active_subscriptions_by_month(df: pd.DataFrame) -> pd.Series:
     Clipped at the current month (no future projection). Cohort-based:
     course_event_start_date is a shared batch start, per the data model.
     """
-    d = df.dropna(subset=["course_event_start_date"]).copy()
-    d["months"] = d["event_name_en_gb"].map(CATEGORY_MONTHS)
-    d["end_date"] = d.apply(
-        lambda r: r["course_event_start_date"] + pd.DateOffset(months=int(r["months"])),
-        axis=1,
-    )
+    d = _with_coverage_window(df)
     if d.empty:
         return pd.Series(dtype=int)
 
-    start = d["course_event_start_date"].min().to_period("M").to_timestamp()
+    start = d["cover_start"].min().to_period("M").to_timestamp()
     today = pd.Timestamp.today().to_period("M").to_timestamp()
     months = pd.date_range(start, today, freq="MS")
 
     out = {}
     for m in months:
         m_end = m + pd.offsets.MonthEnd(0)
-        active = (d["course_event_start_date"] <= m_end) & (d["end_date"] >= m)
-        out[m] = int(active.sum())
+        out[m] = int(_active_mask(d, m, m_end).sum())
     return pd.Series(out)
 
 
@@ -274,17 +300,11 @@ def active_people_in_month(df: pd.DataFrame, month: pd.Timestamp) -> tuple[int, 
     together). Note the two are not interchangeable: a contact with 3 plans
     adds 2 to the subscription-vs-people gap but is only one person.
     """
-    d = df.dropna(subset=["course_event_start_date"]).copy()
+    d = _with_coverage_window(df)
     if d.empty:
         return 0, 0
-    d["months"] = d["event_name_en_gb"].map(CATEGORY_MONTHS)
-    d["end_date"] = d.apply(
-        lambda r: r["course_event_start_date"] + pd.DateOffset(months=int(r["months"])),
-        axis=1,
-    )
     m_end = month + pd.offsets.MonthEnd(0)
-    active = (d["course_event_start_date"] <= m_end) & (d["end_date"] >= month)
-    per_contact = d.loc[active].groupby("global_contact_id").size()
+    per_contact = d.loc[_active_mask(d, month, m_end)].groupby("global_contact_id").size()
     return int(len(per_contact)), int((per_contact >= 2).sum())
 
 
