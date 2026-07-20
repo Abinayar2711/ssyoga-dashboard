@@ -292,6 +292,25 @@ def active_subscriptions_by_month(df: pd.DataFrame) -> pd.Series:
     return pd.Series(out)
 
 
+def people_served_between(df: pd.DataFrame, w_start: pd.Timestamp, w_end: pd.Timestamp) -> int:
+    """Distinct people whose plan was running at ANY point in [w_start, w_end].
+
+    Each person counts ONCE however many months they were covered for, which is
+    what makes this the only honest way to put a single number on a year. The
+    monthly series cannot be summed for that purpose -- someone on a 12-month
+    plan appears in all 12 monthly counts, so the sum overstates by ~5x.
+
+    Equivalent to the union of the monthly active sets, computed in one pass:
+    a window overlaps the range iff it starts before the range ends and ends
+    after the range starts (cover_end exclusive, as everywhere else).
+    """
+    d = _with_coverage_window(df)
+    if d.empty:
+        return 0
+    overlaps = (d["cover_start"] <= w_end) & (d["cover_end"] > w_start)
+    return int(d.loc[overlaps, "global_contact_id"].nunique())
+
+
 def active_people_in_month(df: pd.DataFrame, month: pd.Timestamp) -> tuple[int, int]:
     """(distinct contacts, contacts holding 2+ plans) active in `month`.
 
@@ -869,23 +888,55 @@ with st.expander("ℹ️ How Active Subscriptions is calculated"):
   does *not*** shrink it; it only **zooms** the trend. "Active in month *M*" is about the
   window, not when the person registered — a plan bought in an earlier FY that's still active
   must still count.
-- **What the two numbers mean:**
+- **What the numbers mean:**
   - *No year selected* → **Active now** (current month) + **all-time peak** (highest month ever).
   - *A year selected* → zoom to it → **Peak in period** (highest month in it) + **Active at
     period-end** (its last month).
+  - Either way → **People served**, each person counted **once** for the whole period.
 - **Counts subscriptions, not people** — someone with 2 overlapping plans counts as 2.
+  *People served* is the exception: that one counts people.
+
+---
+
+##### ⚠️ Why there is no single "active this year" number — and which one to quote
+
+A 3-month plan starting in April is genuinely active in April, May **and** June, so that
+person appears in three monthly counts. That is correct. It also means the twelve monthly
+figures **must never be added together** — a year-long subscriber would be counted twelve
+times. For FY2025-26 the sum comes to ~145,000 against ~29,000 real people, a 5× overstatement.
+
+Think of a gym. You can say how many members were on the books in March. For a whole year
+there is no single "members" number, because people join and leave. So you quote one of:
+
+| Question being asked | Use |
+|---|---|
+| "How busy did we get?" | **Peak in period** |
+| "Where do we stand now?" | **Active at period-end** |
+| "How many people did we serve this year?" | **People served** ← usually this one |
+
+**Careful:** *People served* (plan **running** during the period) is not the same as the
+subscriber counts in section 3 (people who **registered** during the period). Someone who
+bought a 1-Year plan last January is still being served this year but did not register this
+year. Related numbers, different questions — don't swap them.
 - **Cohort-based start**, clipped at the current month (no future projection). Renamed from
   *MAU* — the data has **no login/attendance signal**, only registrations.
         """
     )
 
-a1, a2 = st.columns(2)
+a1, a2, a3 = st.columns(3)
 if time_filter_active and len(act_view):
     pk_val = int(act_view.max()); pk_month = act_view.idxmax().strftime("%b %Y")
     end_m = act_view.index.max(); end_val = int(act_view.loc[end_m]); end_lbl = end_m.strftime("%b %Y")
     a1.metric("Peak in period", fmt(pk_val), help=f"Highest active month in the selected period ({pk_month}).")
     a2.metric(f"Active at {end_lbl}", fmt(end_val),
               help="Active subscriptions at the end of the selected period (or current month, whichever is earlier).")
+    # The single-number answer to "how many were active this year?" -- each person
+    # once, so it can be quoted for a period without the sum-the-months error.
+    served = people_served_between(df_active, act_view.index.min(), end_m + pd.offsets.MonthEnd(0))
+    a3.metric("People served in period", fmt(served),
+              help="Distinct people whose plan was running at any point in the selected period. "
+                   "Counted once each, however many months they were covered for.")
+    a3.caption("Each person counted **once** — this is the number to quote for a year.")
 else:
     peak_val = int(act.max()) if len(act) else 0
     peak_month = act.idxmax().strftime("%b %Y") if len(act) else "—"
@@ -895,6 +946,11 @@ else:
         f"{fmt(current_active_multi)} people run 2+ overlapping plans."
     )
     a2.metric("All-time peak", fmt(peak_val), help=f"Highest active month ever ({peak_month}).")
+    if len(act):
+        served = people_served_between(df_active, act.index.min(), act.index.max() + pd.offsets.MonthEnd(0))
+        a3.metric("People served (all time)", fmt(served),
+                  help="Distinct people who have ever held a running plan. Counted once each.")
+        a3.caption("Each person counted **once** — pick a year to see it for that year.")
 
 fig = go.Figure(go.Scatter(
     x=act_view.index, y=act_view.values, mode="lines", fill="tozeroy",
