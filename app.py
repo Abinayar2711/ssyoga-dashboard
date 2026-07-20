@@ -34,14 +34,51 @@ import streamlit as st
 # on Streamlit Cloud add  data_source = "gsheet"  to Secrets.
 try:
     DATA_SOURCE = st.secrets.get("data_source", "csv")
+    # A bare key pasted AFTER a [table] header gets absorbed into that table, so
+    # `data_source` under [auth] reads as auth.data_source and we silently fall
+    # back to csv. That looks like "no secrets set" but is really "wrong order" --
+    # detect it explicitly rather than letting it present as a missing-file error.
+    if DATA_SOURCE == "csv":
+        for _table in ("auth", "gcp_service_account"):
+            _misplaced = st.secrets.get(_table, {})
+            if hasattr(_misplaced, "get") and _misplaced.get("data_source"):
+                DATA_SOURCE = _misplaced["data_source"]
+                st.warning(
+                    f"`data_source` was found inside the `[{_table}]` section of Secrets. "
+                    "In TOML a bare key belongs to the table above it — move "
+                    "`data_source`, `gsheet_url` and `gsheet_worksheet` to the very top "
+                    "of the Secrets box, above every `[section]` header.",
+                    icon="⚠️",
+                )
+                break
 except Exception:
     DATA_SOURCE = "csv"
 
 CSV_PATH = "../Sri Sri Yoga — Enrollment Report - Sheet1.csv"
 
-# For DATA_SOURCE == "gsheet":
-GSHEET_URL = "https://docs.google.com/spreadsheets/d/1Cr5PoHXtud8aYNYpi-hugGuRLu_RvjB9BS7gX5wgjZY/edit"
-GSHEET_WORKSHEET = "Sheet1"
+# For DATA_SOURCE == "gsheet". Read from secrets so pointing the app at a new
+# Sheet is a secrets edit, not a commit + redeploy. The literals below are only
+# a local-dev fallback.
+def _secret(key: str, default: str = "") -> str:
+    """Read a top-level secret, tolerating the common paste-order mistake.
+
+    If the key was pasted below a [table] header it lives inside that table; look
+    there too so a misordered Secrets box degrades to a warning, not a failure.
+    """
+    try:
+        if key in st.secrets:
+            return st.secrets[key]
+        for table in ("auth", "gcp_service_account"):
+            section = st.secrets.get(table, {})
+            if hasattr(section, "get") and section.get(key):
+                return section[key]
+    except Exception:
+        pass
+    return default
+
+
+GSHEET_URL = _secret("gsheet_url")
+GSHEET_WORKSHEET = _secret("gsheet_worksheet", "Sheet1")
 
 CACHE_TTL_SECONDS = 3600  # re-read the source at most once an hour per viewer
 
@@ -78,6 +115,12 @@ st.set_page_config(
     page_icon="🧘",
     layout="wide",
 )
+
+# Google sign-in gate — must run before anything renders data.
+from auth_gate import require_login, sidebar_account  # noqa: E402
+
+require_login("SSYoga — Enrollment Dashboard")
+sidebar_account()
 
 
 # ----------------------------------------------------------------------------
@@ -131,6 +174,22 @@ def _read_gsheet() -> pd.DataFrame:
     Uncomment when your daily job is populating the sheet.
     """
     import gspread  # noqa: local import so CSV mode has no gspread dependency
+
+    # Fail loudly and specifically: a missing URL or key otherwise surfaces as an
+    # opaque gspread error that looks like a permissions problem.
+    if not GSHEET_URL:
+        st.error(
+            "`data_source` is \"gsheet\" but no `gsheet_url` is set in Secrets. "
+            "Add the full Google Sheet URL and reboot the app."
+        )
+        st.stop()
+    if "gcp_service_account" not in st.secrets:
+        st.error(
+            "`data_source` is \"gsheet\" but there is no `[gcp_service_account]` block "
+            "in Secrets. Paste the service-account JSON, and share the Sheet with its "
+            "`client_email` as Viewer."
+        )
+        st.stop()
 
     gc = gspread.service_account_from_dict(dict(st.secrets["gcp_service_account"]))
     sh = gc.open_by_url(GSHEET_URL) if GSHEET_URL.startswith("http") else gc.open_by_key(GSHEET_URL)
@@ -205,6 +264,28 @@ def active_subscriptions_by_month(df: pd.DataFrame) -> pd.Series:
         active = (d["course_event_start_date"] <= m_end) & (d["end_date"] >= m)
         out[m] = int(active.sum())
     return pd.Series(out)
+
+
+def active_people_in_month(df: pd.DataFrame, month: pd.Timestamp) -> tuple[int, int]:
+    """(distinct contacts, contacts holding 2+ plans) active in `month`.
+
+    The people count is lower than the subscription count because a contact can
+    hold several overlapping plans (e.g. a 1-Year and a 1-Month running
+    together). Note the two are not interchangeable: a contact with 3 plans
+    adds 2 to the subscription-vs-people gap but is only one person.
+    """
+    d = df.dropna(subset=["course_event_start_date"]).copy()
+    if d.empty:
+        return 0, 0
+    d["months"] = d["event_name_en_gb"].map(CATEGORY_MONTHS)
+    d["end_date"] = d.apply(
+        lambda r: r["course_event_start_date"] + pd.DateOffset(months=int(r["months"])),
+        axis=1,
+    )
+    m_end = month + pd.offsets.MonthEnd(0)
+    active = (d["course_event_start_date"] <= m_end) & (d["end_date"] >= month)
+    per_contact = d.loc[active].groupby("global_contact_id").size()
+    return int(len(per_contact)), int((per_contact >= 2).sum())
 
 
 def fmt(n) -> str:
@@ -362,6 +443,9 @@ if audience != "All" and "Is_Teacher_or_VTP_Grad" in df_active.columns:
         df_active = df_active[df_active["Is_Teacher_or_VTP_Grad"] != "Yes"]
 act = active_subscriptions_by_month(df_active)
 current_active = int(act.iloc[-1]) if len(act) else 0
+current_active_people, current_active_multi = (
+    active_people_in_month(df_active, act.index.max()) if len(act) else (0, 0)
+)
 
 
 def numbers_table(df_str):
@@ -374,6 +458,7 @@ k1, k2, k3, k4 = st.columns(4)
 k1.metric("Total Enrollments", fmt(total_enroll), help="Each registration = 1 enrollment (repeats included).")
 k2.metric("Unique Subscribers", fmt(unique_contacts), help="Distinct global_contact_id.")
 k3.metric("Active Subscriptions (now)", fmt(current_active), help="Registrations whose cohort window overlaps the current month.")
+k3.caption(f"held by {fmt(current_active_people)} people")
 k4.metric("Resubscribe Rate", f"{resub*100:.1f}%", help="Contacts with 2+ registrations ÷ total contacts (per-contact).")
 
 with st.expander("ℹ️  Metric definitions (so the numbers are traceable)"):
@@ -785,6 +870,10 @@ else:
     peak_val = int(act.max()) if len(act) else 0
     peak_month = act.idxmax().strftime("%b %Y") if len(act) else "—"
     a1.metric("Active now", fmt(current_active), help=f"Current month ({cur_month.strftime('%b %Y') if cur_month is not None else '—'}).")
+    a1.caption(
+        f"{fmt(current_active)} live plans held by {fmt(current_active_people)} people — "
+        f"{fmt(current_active_multi)} people run 2+ overlapping plans."
+    )
     a2.metric("All-time peak", fmt(peak_val), help=f"Highest active month ever ({peak_month}).")
 
 fig = go.Figure(go.Scatter(
